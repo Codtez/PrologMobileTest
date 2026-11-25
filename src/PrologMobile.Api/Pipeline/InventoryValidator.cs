@@ -19,11 +19,16 @@ public sealed class InventoryValidator
 
     public void ValidatePage(InventoryPage inventoryPage, int requestedPage)
     {
+        var expectedTotalPages = CalculateTotalPages(
+            inventoryPage.TotalRecords
+        );
+
         if (inventoryPage.Page != requestedPage)
         {
             throw new InvalidDataException(
-                $"Requested page {requestedPage}, but the API " +
-                $"returned page {inventoryPage.Page}.");
+                $"Requested page {requestedPage} exceeds the " +
+                $"calculated total of {expectedTotalPages} pages."
+            );
         }
 
         if (inventoryPage.PageSize != _options.PageSize)
@@ -38,9 +43,6 @@ public sealed class InventoryValidator
             throw new InvalidDataException(
                 "The API returned invalid pagination totals.");
         }
-
-        var expectedTotalPages = (int)Math.Ceiling(
-            (decimal)inventoryPage.TotalRecords / _options.PageSize);
 
         if (inventoryPage.TotalPages != expectedTotalPages)
         {
@@ -97,4 +99,107 @@ public sealed class InventoryValidator
                 $"Record {record.Id} on page {page} has a negative quantity.");
         }
     }
+
+    // Independently calculate the number of pages required
+    // to retrieve the complete inventory dataset.
+    public int CalculateTotalPages(int totalRecords)
+    {
+        return (int)Math.Ceiling(
+            (decimal)totalRecords / _options.PageSize
+        );
+    }
+
+    // Verify that pagination metadata remains consistent
+    // across the complete collection of retrieved pages.
+    public void ValidateDatasetMetadata(
+        IReadOnlyList<InventoryPage> pages,
+        int expectedTotalRecords)
+    {
+        // Calculate the expected number of pages.
+        var expectedTotalPages = CalculateTotalPages(
+            expectedTotalRecords
+        );
+
+        // Account for the initial page request when the dataset is empty.
+        var expectedRetrievedPages = Math.Max(1, expectedTotalPages);
+
+        // Verify that all required pages were retrieved.
+        if (pages.Count != expectedRetrievedPages)
+        {
+            throw new InvalidDataException(
+                $"Expected {expectedRetrievedPages} pages, " +
+                $"but retrieved {pages.Count}."
+            );
+        }
+
+        // Verify metadata across every retrieved page.
+        foreach (var page in pages)
+        {
+            // Ensure the expected dataset size has not changed.
+            if (page.TotalRecords != expectedTotalRecords)
+            {
+                throw new InvalidDataException(
+                    $"Inconsistent total record count on page {page.Page}. " +
+                    $"Expected {expectedTotalRecords}, " +
+                    $"but received {page.TotalRecords}."
+                );
+            }
+        }
+
+        // Log successful cross-page metadata validation.
+        _logger.LogInformation(
+            "Dataset metadata validated across {PageCount} pages. " +
+            "Expected dataset size: {TotalRecords} records.",
+            pages.Count,
+            expectedTotalRecords
+        );
+    }
+
+    // Verify that the deduplicated dataset contains the
+    // expected number of unique inventory records.
+    public void ValidateCompleteness(
+        IReadOnlyList<InventoryRecord> records,
+        int expectedTotalRecords)
+    {
+        // Determine the actual number of unique records.
+        var actualTotalRecords = records.Count;
+
+        // Calculate the difference between expected and actual totals.
+        var recordDifference = expectedTotalRecords - actualTotalRecords;
+
+        // Reject incomplete datasets.
+        if (recordDifference > 0)
+        {
+            throw new InvalidDataException(
+                $"Incomplete inventory dataset. " +
+                $"Expected {expectedTotalRecords} unique records, " +
+                $"but received {actualTotalRecords}. " +
+                $"Missing {recordDifference} records."
+            );
+        }
+
+        // Reject datasets containing unexpected additional records.
+        if (recordDifference < 0)
+        {
+            throw new InvalidDataException(
+                $"Inventory dataset exceeds expected size. " +
+                $"Expected {expectedTotalRecords} unique records, " +
+                $"but received {actualTotalRecords}. " +
+                $"Found {Math.Abs(recordDifference)} additional records."
+            );
+        }
+
+        // Log successful dataset completeness verification.
+        _logger.LogInformation(
+            "Dataset completeness verified. " +
+            "Expected records: {ExpectedTotalRecords}. " +
+            "Actual unique records: {ActualTotalRecords}.",
+            expectedTotalRecords,
+            actualTotalRecords
+        );
+    }
+
+
 }
+
+

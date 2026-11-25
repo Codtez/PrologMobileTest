@@ -45,4 +45,37 @@ public sealed class InventoryRetriever
 
         return inventoryPage;
     }
+
+    // Retrieve all remaining inventory pages and preserve
+    // the original page responses for subsequent processing.
+    public async Task<List<InventoryPage>> RetrieveRemainingPagesAsync(
+        InventoryPage firstPage,
+        int expectedTotalPages,
+        CancellationToken cancellationToken)
+    {
+        // Initialize a collection containing the first page.
+        var pages = new List<InventoryPage>
+        {
+            firstPage
+        };
+
+        // Retrieve each remaining page sequentially.
+        for (int page = 2; page <= expectedTotalPages; page++)
+        {
+            // Stop retrieval if cancellation has been requested.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Retrieve and validate the next inventory page.
+            var inventoryPage = await GetPageAsync(
+                page,
+                cancellationToken
+            );
+
+            // Preserve the complete page response.
+            pages.Add(inventoryPage);
+        }
+
+        // Return all retrieved inventory pages.
+        return pages;
+    }
 }

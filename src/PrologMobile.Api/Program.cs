@@ -76,6 +76,8 @@ builder.Services.AddTransient<InventoryPageParser>();
 builder.Services.AddTransient<InventoryValidator>();
 builder.Services.AddTransient<InventoryRetriever>();
 builder.Services.AddTransient<InventoryAggregator>();
+builder.Services.AddTransient<InventoryDeduplicator>();
+builder.Services.AddTransient<InventoryPipeline>();
 
 //// Register a typed HTTP client for the external inventory API using config.
 builder.Services.AddHttpClient<InventoryApiClient>(
@@ -111,8 +113,19 @@ builder.Services.AddHttpClient<InventoryApiClient>(
 // Build the application using our registered services.
 var app = builder.Build();
 
-// Temporary endpoint to verify that the application is running.
-app.MapGet("/", () => "Hello World!");
+// Expose the inventory summary endpoint.
+app.MapGet("/api/inventory/summary", async (
+    InventoryPipeline pipeline,
+    CancellationToken cancellationToken) =>
+{
+    // Execute the complete inventory processing pipeline.
+    var summaries = await pipeline.ExecuteAsync(
+        cancellationToken
+    );
+
+    // Return the category summaries as a JSON response.
+    return Results.Ok(summaries);
+});
 
 // Start the HTTP server.
 app.Run();
