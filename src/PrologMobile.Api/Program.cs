@@ -6,6 +6,8 @@ using PrologMobile.Api.Resilience;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Console;
 
+using PrologMobile.Api.Endpoints;
+
 var builder = WebApplication.CreateBuilder(args);
 
 var diagnosticsEnabled = builder.Configuration.GetValue<bool>("Diagnostics:Enabled");
@@ -124,18 +126,9 @@ builder.Services.AddHttpClient<InventoryApiClient>(
 var app = builder.Build();
 
 // Expose the inventory summary endpoint.
-app.MapGet("/api/inventory/summary", async (
-    InventoryPipeline pipeline,
-    CancellationToken cancellationToken) =>
-{
-    // Execute the complete inventory processing pipeline.
-    var summaries = await pipeline.ExecuteAsync(
-        cancellationToken
-    );
-
-    // Return the category summaries as a JSON response.
-    return Results.Ok(summaries);
-});
+app.MapGet(
+    "/api/inventory/summary",
+    InventoryEndpoint.GetSummaryAsync);
 
 // Start the HTTP server.
 app.Run();
