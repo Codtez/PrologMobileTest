@@ -2,7 +2,7 @@
 using PrologMobile.Api.Models;
 using System.Text.Json;
 
-namespace PrologMobile.Api.Services;
+namespace PrologMobile.Api.Pipeline;
 
 public sealed class InventoryAggregator
 {

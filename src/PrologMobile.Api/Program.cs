@@ -1,5 +1,7 @@
 using PrologMobile.Api.Configuration;
 using PrologMobile.Api.Clients;
+using PrologMobile.Api.Pipeline;
+using PrologMobile.Api.Resilience;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -69,6 +71,11 @@ builder.Services
 /////// HTTP START ///////////
 // Register one shared rate limiter for all inventory API clients.
 builder.Services.AddSingleton<InventoryRateLimiter>(); //Scoped(per scope)/Transient(per resolution)/Singleton
+builder.Services.AddTransient<InventoryRetryPolicy>();
+builder.Services.AddTransient<InventoryPageParser>();
+builder.Services.AddTransient<InventoryValidator>();
+builder.Services.AddTransient<InventoryRetriever>();
+builder.Services.AddTransient<InventoryAggregator>();
 
 //// Register a typed HTTP client for the external inventory API using config.
 builder.Services.AddHttpClient<InventoryApiClient>(
