@@ -28,22 +28,48 @@ public sealed class InventoryRetriever
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(page, 1);
 
-        using var response = await _retryPolicy.GetPageAsync(page, cancellationToken);
-        var inventoryPage = await _parser.ParseAsync(response, page, cancellationToken);
-        _validator.ValidatePage(inventoryPage, page);
-
-        foreach (var record in inventoryPage.Records)
+        using var scope = _logger.BeginScope("Page:{Page}", page);
+        var operation = "HTTP request";
+        try
         {
-            _validator.ValidateRecord(record, page);
+            _logger.LogInformation("[HTTP] Beginning retrieval of page {Page}.", page);
+            using var response = await _retryPolicy.GetPageAsync(page, cancellationToken);
+            operation = "JSON parsing";
+            _logger.LogInformation("[PARSER] Beginning JSON parsing for page {Page}.", page);
+            var inventoryPage = await _parser.ParseAsync(response, page, cancellationToken);
+            _logger.LogInformation("[PARSER] Page {Page} successfully deserialized.", page);
+            operation = "page metadata validation";
+            _logger.LogInformation("[VALIDATION] Beginning metadata validation for page {Page}.", page);
+            _validator.ValidatePage(inventoryPage, page);
+
+            operation = "record validation";
+            _logger.LogInformation(
+                "[VALIDATION] Beginning validation of {RecordCount} records on page {Page}.",
+                inventoryPage.Records.Count, page);
+            foreach (var record in inventoryPage.Records)
+            {
+                _validator.ValidateRecord(record, page);
+            }
+
+            _logger.LogInformation(
+                "[VALIDATION] Page {Page} validated. Reported pages: {TotalPages}. Records: " +
+                "{RecordCount}. Expected dataset total: {TotalRecords}",
+                inventoryPage.Page, inventoryPage.TotalPages,
+                inventoryPage.Records.Count, inventoryPage.TotalRecords);
+
+            return inventoryPage;
         }
-
-        _logger.LogInformation(
-            "Received page {Page} of {TotalPages} containing " +
-            "{RecordCount} records. Expected dataset total: {TotalRecords}",
-            inventoryPage.Page, inventoryPage.TotalPages,
-            inventoryPage.Records.Count, inventoryPage.TotalRecords);
-
-        return inventoryPage;
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                "[PIPELINE] Page {Page} failed during {Operation} with {ExceptionType}.",
+                page, operation, exception.GetType().FullName);
+            throw;
+        }
     }
 
     // Retrieve all remaining inventory pages and preserve
@@ -65,6 +91,9 @@ public sealed class InventoryRetriever
             // Stop retrieval if cancellation has been requested.
             cancellationToken.ThrowIfCancellationRequested();
 
+            _logger.LogInformation(
+                "[PHASE 3] Retrieving page {Page} of {ExpectedTotalPages}.",
+                page, expectedTotalPages);
             // Retrieve and validate the next inventory page.
             var inventoryPage = await GetPageAsync(
                 page,
@@ -73,6 +102,9 @@ public sealed class InventoryRetriever
 
             // Preserve the complete page response.
             pages.Add(inventoryPage);
+            _logger.LogInformation(
+                "[PHASE 3] Retrieved page {Page} of {ExpectedTotalPages} with {RecordCount} records.",
+                page, expectedTotalPages, inventoryPage.Records.Count);
         }
 
         // Return all retrieved inventory pages.

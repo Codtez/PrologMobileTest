@@ -1,4 +1,5 @@
 using System.Net;
+using System.Diagnostics;
 using Microsoft.Extensions.Options;
 using PrologMobile.Api.Clients;
 using PrologMobile.Api.Configuration;
@@ -35,16 +36,19 @@ public sealed class InventoryRetryPolicy
             await _rateLimiter.WaitAsync(cancellationToken);
 
             _logger.LogInformation(
-                "Requesting inventory page {Page} with page size " +
+                "[HTTP] Requesting inventory page {Page} with page size " +
                 "{PageSize}. Attempt {Attempt} of {MaxAttempts}",
                 page, _options.PageSize, attempt, _options.MaxAttempts);
 
+            var requestTimer = Stopwatch.StartNew();
             try
             {
                 var response = await _client.GetPageAsync(page, cancellationToken);
                 _logger.LogInformation(
-                    "Inventory page {Page} returned HTTP status {StatusCode}",
-                    page, (int)response.StatusCode);
+                    "[HTTP] Page {Page}, attempt {Attempt} of {MaxAttempts}, returned HTTP " +
+                    "{StatusCode} in {ElapsedMilliseconds} ms.",
+                    page, attempt, _options.MaxAttempts, (int)response.StatusCode,
+                    requestTimer.ElapsedMilliseconds);
 
                 if (IsRetryableStatusCode(response.StatusCode))
                 {
@@ -54,17 +58,29 @@ public sealed class InventoryRetryPolicy
                     if (attempt < _options.MaxAttempts)
                     {
                         _logger.LogWarning(
-                            "Retrying inventory page {Page} after HTTP " +
+                            "[RETRY] Retrying inventory page {Page} after HTTP " +
                             "{StatusCode}. Attempt {Attempt} failed. " +
                             "Additional cooldown: {DelaySeconds} seconds",
                             page, (int)response.StatusCode, attempt, delay.TotalSeconds);
                         response.Dispose();
                         continue;
                     }
+
+                    _logger.LogWarning(
+                        "[RETRY] Exhausted {MaxAttempts} attempts for page {Page} after HTTP " +
+                        "{StatusCode}. Applied cooldown: {DelaySeconds} seconds.",
+                        _options.MaxAttempts, page, (int)response.StatusCode, delay.TotalSeconds);
                 }
 
                 if (!response.IsSuccessStatusCode)
                 {
+                    if (!IsRetryableStatusCode(response.StatusCode))
+                    {
+                        _logger.LogWarning(
+                            "[HTTP] Page {Page} failed permanently with HTTP {StatusCode} " +
+                            "on attempt {Attempt} of {MaxAttempts}.",
+                            page, (int)response.StatusCode, attempt, _options.MaxAttempts);
+                    }
                     using (response)
                     {
                         response.EnsureSuccessStatusCode();
@@ -78,9 +94,9 @@ public sealed class InventoryRetryPolicy
             {
                 _logger.LogWarning(
                     exception,
-                    "Network failure retrieving page {Page}. " +
-                    "Attempt {Attempt} failed. Retrying",
-                    page, attempt);
+                    "[RETRY] Network failure retrieving page {Page}. Attempt {Attempt} " +
+                    "of {MaxAttempts} failed after {ElapsedMilliseconds} ms. Retrying.",
+                    page, attempt, _options.MaxAttempts, requestTimer.ElapsedMilliseconds);
             }
             catch (OperationCanceledException exception)
                 when (!cancellationToken.IsCancellationRequested &&
@@ -88,9 +104,30 @@ public sealed class InventoryRetryPolicy
             {
                 _logger.LogWarning(
                     exception,
-                    "Request timed out retrieving page {Page}. " +
-                    "Attempt {Attempt} failed. Retrying",
-                    page, attempt);
+                    "[RETRY] Request timed out retrieving page {Page}. Attempt {Attempt} " +
+                    "of {MaxAttempts} failed after {ElapsedMilliseconds} ms. Retrying.",
+                    page, attempt, _options.MaxAttempts, requestTimer.ElapsedMilliseconds);
+            }
+            catch (HttpRequestException exception)
+                when (exception.StatusCode is null && attempt == _options.MaxAttempts)
+            {
+                _logger.LogError(
+                    exception,
+                    "[RETRY] Exhausted {MaxAttempts} attempts for page {Page} after a " +
+                    "network failure taking {ElapsedMilliseconds} ms.",
+                    _options.MaxAttempts, page, requestTimer.ElapsedMilliseconds);
+                throw;
+            }
+            catch (OperationCanceledException exception)
+                when (!cancellationToken.IsCancellationRequested &&
+                      attempt == _options.MaxAttempts)
+            {
+                _logger.LogError(
+                    exception,
+                    "[RETRY] Exhausted {MaxAttempts} attempts for page {Page} after a " +
+                    "request timeout taking {ElapsedMilliseconds} ms.",
+                    _options.MaxAttempts, page, requestTimer.ElapsedMilliseconds);
+                throw;
             }
         }
 

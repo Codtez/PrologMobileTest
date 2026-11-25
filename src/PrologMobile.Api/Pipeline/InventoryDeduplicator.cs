@@ -35,6 +35,9 @@ public sealed class InventoryDeduplicator
                     // Verify that the duplicate contains identical data.
                     if (existingRecord != record)
                     {
+                        _logger.LogError(
+                            "[DEDUPLICATION] Conflicting duplicate record {RecordId} detected on page {Page}.",
+                            record.Id, page.Page);
                         throw new InvalidDataException(
                             $"Conflicting duplicate record {record.Id} " +
                             $"detected on page {page.Page}."
@@ -45,7 +48,7 @@ public sealed class InventoryDeduplicator
                     duplicateCount++;
 
                     _logger.LogWarning(
-                        "Identical duplicate record {RecordId} " +
+                        "[DEDUPLICATION] Identical duplicate record {RecordId} " +
                         "detected on page {Page}. Ignoring extra copy.",
                         record.Id,
                         page.Page
@@ -66,7 +69,7 @@ public sealed class InventoryDeduplicator
 
         // PHASE 4: Log the completed deduplication results.
         _logger.LogInformation(
-            "Deduplication completed. Raw records: {RawRecordCount}. " +
+            "[DEDUPLICATION] Deduplication completed. Raw records: {RawRecordCount}. " +
             "Identical duplicates: {DuplicateCount}. " +
             "Unique records: {UniqueRecordCount}.",
             rawRecordCount,

@@ -1,10 +1,20 @@
 using PrologMobile.Api.Configuration;
 using PrologMobile.Api.Clients;
+using PrologMobile.Api.Logging;
 using PrologMobile.Api.Pipeline;
 using PrologMobile.Api.Resilience;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging.Console;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var diagnosticsEnabled = builder.Configuration.GetValue<bool>("Diagnostics:Enabled");
+var diagnosticLevel = diagnosticsEnabled ? LogLevel.Debug : LogLevel.Warning;
+builder.Logging.AddFilter("PrologMobile.Api", diagnosticLevel);
+builder.Logging.AddFilter<ConsoleLoggerProvider>("PrologMobile.Api", diagnosticLevel);
+builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
+builder.Logging.AddConsole(options => options.FormatterName = InventoryConsoleFormatter.FormatterName);
+builder.Logging.AddConsoleFormatter<InventoryConsoleFormatter, ConsoleFormatterOptions>();
 
 //////// VALIDATE CONFIGURATION AT START ////////
 
@@ -106,7 +116,7 @@ builder.Services.AddHttpClient<InventoryApiClient>(
             "application/json"
         );
     }
-);
+).RedactLoggedHeaders(_ => true);
 
 
 

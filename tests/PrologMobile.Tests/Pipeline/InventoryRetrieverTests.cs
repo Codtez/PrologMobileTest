@@ -138,7 +138,8 @@ public sealed class InventoryRetrieverTests
         var client = new InventoryApiClient(
             new HttpClient(handler) { BaseAddress = new Uri("https://example.test") }, options);
         var policy = new InventoryRetryPolicy(
-            client, new InventoryRateLimiter(options), options, NullLogger<InventoryRetryPolicy>.Instance);
+            client, new InventoryRateLimiter(options, NullLogger<InventoryRateLimiter>.Instance),
+            options, NullLogger<InventoryRetryPolicy>.Instance);
         return (new InventoryRetriever(
             policy, new InventoryPageParser(),
             new InventoryValidator(options, NullLogger<InventoryValidator>.Instance),

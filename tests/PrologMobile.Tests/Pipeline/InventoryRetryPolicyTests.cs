@@ -157,7 +157,7 @@ public sealed class InventoryRetryPolicyTests
     public async Task WaitAsync_RechecksCooldownExtendedDuringWait()
     {
         var options = Options.Create(new InventoryApiOptions { RequestIntervalMilliseconds = 100 });
-        var limiter = new InventoryRateLimiter(options);
+        var limiter = new InventoryRateLimiter(options, NullLogger<InventoryRateLimiter>.Instance);
         await limiter.WaitAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
         var waiting = limiter.WaitAsync(cts.Token);
@@ -178,7 +178,7 @@ public sealed class InventoryRetryPolicyTests
         var handler = new StubHandler(respond);
         var client = new InventoryApiClient(
             new HttpClient(handler) { BaseAddress = new Uri("https://example.test") }, options);
-        var limiter = new InventoryRateLimiter(options);
+        var limiter = new InventoryRateLimiter(options, NullLogger<InventoryRateLimiter>.Instance);
         return (new InventoryRetryPolicy(
             client, limiter, options, NullLogger<InventoryRetryPolicy>.Instance), handler, limiter);
     }

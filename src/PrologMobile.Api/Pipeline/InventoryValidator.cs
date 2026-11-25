@@ -47,7 +47,7 @@ public sealed class InventoryValidator
         if (inventoryPage.TotalPages != expectedTotalPages)
         {
             _logger.LogWarning(
-                "Inconsistent pagination metadata on page {Page}. " +
+                "[VALIDATION] Inconsistent pagination metadata on page {Page}. " +
                 "Calculated {ExpectedTotalPages} pages, but the API " +
                 "reported {ReportedTotalPages}",
                 requestedPage, expectedTotalPages, inventoryPage.TotalPages);
@@ -148,7 +148,7 @@ public sealed class InventoryValidator
 
         // Log successful cross-page metadata validation.
         _logger.LogInformation(
-            "Dataset metadata validated across {PageCount} pages. " +
+            "[VALIDATION] Dataset metadata validated across {PageCount} pages. " +
             "Expected dataset size: {TotalRecords} records.",
             pages.Count,
             expectedTotalRecords
@@ -191,7 +191,7 @@ public sealed class InventoryValidator
 
         // Log successful dataset completeness verification.
         _logger.LogInformation(
-            "Dataset completeness verified. " +
+            "[VALIDATION] Dataset completeness verified. " +
             "Expected records: {ExpectedTotalRecords}. " +
             "Actual unique records: {ActualTotalRecords}.",
             expectedTotalRecords,

@@ -10,6 +10,7 @@ public sealed class InventoryRateLimiter
 
     // Minimum required interval between requests.
     private readonly TimeSpan _requestInterval;
+    private readonly ILogger<InventoryRateLimiter> _logger;
 
     // Earliest permitted time for the next request.
     private DateTimeOffset _nextRequestTime = DateTimeOffset.MinValue;
@@ -21,21 +22,27 @@ public sealed class InventoryRateLimiter
     private readonly object _cooldownLock = new();
 
     public InventoryRateLimiter(
-        IOptions<InventoryApiOptions> options)
+        IOptions<InventoryApiOptions> options,
+        ILogger<InventoryRateLimiter> logger)
     {
         // Retrieve the request interval from our configuration.
         _requestInterval = TimeSpan.FromMilliseconds(
             options.Value.RequestIntervalMilliseconds
         );
+        _logger = logger;
     }
 
     // Wait until another outgoing API request is permitted.
     public async Task WaitAsync(
         CancellationToken cancellationToken = default)
     {
+        _logger.LogInformation(
+            "[RATE LIMIT] Waiting for request permission. Normal spacing: {SpacingMilliseconds} ms.",
+            _requestInterval.TotalMilliseconds);
         // Acquire exclusive access to the request schedule.
         await _gate.WaitAsync(cancellationToken);
 
+        var permissionGranted = false;
         try
         {
             while (true)
@@ -43,6 +50,7 @@ public sealed class InventoryRateLimiter
                 cancellationToken.ThrowIfCancellationRequested();
 
                 TimeSpan delay;
+                TimeSpan cooldownRemaining;
 
                 lock (_cooldownLock)
                 {
@@ -58,17 +66,23 @@ public sealed class InventoryRateLimiter
                     // Calculate the remaining waiting period.
                     var currentTime = DateTimeOffset.UtcNow;
                     delay = permittedTime - currentTime;
+                    cooldownRemaining = _cooldownUntil - currentTime;
 
                     // If no waiting is required, reserve the next request time.
                     if (delay <= TimeSpan.Zero)
                     {
                         _nextRequestTime =
                             currentTime.Add(_requestInterval);
-
+                        permissionGranted = true;
                         return;
                     }
                 }
 
+                _logger.LogInformation(
+                    "[RATE LIMIT] Waiting {DelayMilliseconds} ms. Normal spacing: " +
+                    "{SpacingMilliseconds} ms; server cooldown remaining: {CooldownMilliseconds} ms.",
+                    delay.TotalMilliseconds, _requestInterval.TotalMilliseconds,
+                    Math.Max(0, cooldownRemaining.TotalMilliseconds));
                 // Wait asynchronously without holding the cooldown lock.
                 await Task.Delay(delay, cancellationToken);
 
@@ -80,6 +94,10 @@ public sealed class InventoryRateLimiter
         {
             // Always release the request scheduling gate.
             _gate.Release();
+            if (permissionGranted)
+            {
+                _logger.LogInformation("[RATE LIMIT] Request permission granted.");
+            }
         }
     }
 
@@ -103,5 +121,9 @@ public sealed class InventoryRateLimiter
                 _cooldownUntil = cooldownUntil;
             }
         }
+
+        _logger.LogInformation(
+            "[RATE LIMIT] Server cooldown applied or already exceeded: {CooldownMilliseconds} ms.",
+            delay.TotalMilliseconds);
     }
 }
